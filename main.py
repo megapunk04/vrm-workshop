@@ -148,29 +148,83 @@ def _extract_workshop_items(html: str) -> dict | None:
     return {"items": items, "total": total or len(items)}
 
 
+# Кэш ID для игры, чтобы обходить ограничение Steam SSR на страницах > 3
+_WORKSHOP_ID_CACHE = {}
+
 def browse_catalog(appid: int, page: int = 1, numperpage: int = 30, query: str = "") -> dict:
-    url = f"https://steamcommunity.com/workshop/browse/?appid={appid}&section=readytouseitems&numperpage={numperpage}&p={page}"
-    if query:
-        url += "&searchtext=" + urllib.parse.quote(query)
-    t = _http_get(url)
-    # Новый формат (React SSR): данные во встроенном JSON
-    parsed = _extract_workshop_items(t)
-    if parsed:
-        return {"items": parsed["items"], "total": parsed["total"], "page": page}
-    # Старый формат: ссылки filedetails/?id= в HTML
-    ids = []
-    for m in re.finditer(r'sharedfiles/filedetails/\?id=(\d+)', t):
-        if m.group(1) not in ids:
-            ids.append(m.group(1))
-    total = 0
-    mt = re.search(r'class="workshopBrowsePagingInfo[^"]*"[^>]*>\s*([\d,]+)', t)
-    if mt:
-        total = int(mt.group(1).replace(",", ""))
-    details = fetch_details_bulk([int(x) for x in ids])
+    global _WORKSHOP_ID_CACHE
+    cache_key = f"{appid}_{query}"
+    
+    # Если кэша нет или он старый, соберем все доступные ID со страниц 1-3 (или больше)
+    if cache_key not in _WORKSHOP_ID_CACHE or len(_WORKSHOP_ID_CACHE[cache_key]) < 90:
+        all_ids = []
+        total_count = 0
+        # Проходим первые 3 страницы, где Steam гарантированно отдает SSR-данные
+        for p in range(1, 4):
+            url = f"https://steamcommunity.com/workshop/browse/?appid={appid}&section=readytouseitems&numperpage=30&p={p}"
+            if query:
+                url += "&searchtext=" + urllib.parse.quote(query)
+            try:
+                t = _http_get(url)
+                parsed = _extract_workshop_items(t)
+                if parsed and parsed["items"]:
+                    total_count = max(total_count, parsed["total"])
+                    for it in parsed["items"]:
+                        if it["id"] not in all_ids:
+                            all_ids.append(it["id"])
+            except Exception:
+                pass
+        
+        # Если вдруг в кэше пусто, попробуем хотя бы первую страницу старым методом
+        if not all_ids:
+            try:
+                t = _http_get(f"https://steamcommunity.com/workshop/browse/?appid={appid}&section=readytouseitems&numperpage=30&p=1")
+                for m in re.finditer(r'sharedfiles/filedetails/\?id=(\d+)', t):
+                    if m.group(1) not in all_ids:
+                        all_ids.append(m.group(1))
+                total_count = max(total_count, len(all_ids) * 3) # примерный тотал
+            except Exception:
+                pass
+                
+        _WORKSHOP_ID_CACHE[cache_key] = {"ids": all_ids, "total": max(total_count, len(all_ids))}
+
+    cached = _WORKSHOP_ID_CACHE[cache_key]
+    all_ids = cached["ids"]
+    total = cached["total"]
+    
+    # Вычисляем срез для запрошенной страницы
+    start_idx = (page - 1) * numperpage
+    end_idx = start_idx + numperpage
+    page_ids = all_ids[start_idx:end_idx]
+    
+    # Если для этой страницы ID еще не собраны (например, запросили очень далекую страницу),
+    # попробуем напрямую запросить HTML этой страницы
+    if not page_ids and start_idx < total:
+        url = f"https://steamcommunity.com/workshop/browse/?appid={appid}&section=readytouseitems&numperpage=30&p={page}"
+        if query:
+            url += "&searchtext=" + urllib.parse.quote(query)
+        try:
+            t = _http_get(url)
+            parsed = _extract_workshop_items(t)
+            if parsed and parsed["items"]:
+                page_ids = [it["id"] for it in parsed["items"][:numperpage]]
+        except Exception:
+            pass
+
+    # Получаем детальную информацию для текущей страницы пачкой
+    numeric_ids = [int(x) for x in page_ids if x.isdigit()]
+    details = fetch_details_bulk(numeric_ids) if numeric_ids else {}
+    
     items = []
-    for pid in ids:
+    for pid in page_ids:
         d = details.get(pid, {})
-        items.append({"id": pid, "title": d.get("title", ""), "preview": d.get("preview_url", ""), "file_size": d.get("file_size", 0)})
+        items.append({
+            "id": pid,
+            "title": d.get("title", f"Item {pid}"),
+            "preview": d.get("preview_url", ""),
+            "file_size": int(d.get("file_size", 0)),
+        })
+        
     return {"items": items, "total": total, "page": page}
 
 
