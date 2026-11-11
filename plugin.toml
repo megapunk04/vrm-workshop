@@ -1,0 +1,19 @@
+[plugin]
+id = "vrm-workshop"
+name = "VRM Workshop"
+version = "1.0.0"
+description = "Скачивает VRM-модели из мастерской Steam через DepotDownloaderMod и показывает 3D-превью до сохранения."
+author = "megapunk04"
+license = "MIT"
+call_timeout_secs = 600
+
+[entry]
+command = "python"
+args = ["-u", "main.py"]
+runtimes = ["python"]
+
+[capabilities]
+tools = true
+ui_contributions = true
+
+[permissions]

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="http://astra-plugin.localhost/bridge/astra-bridge.js"></script>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/GLTFLoader.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: transparent;
+    --surface: var(--color-surface, #fff);
+    --surface-2: var(--color-surface-2, #f6f7f9);
+    --border: var(--color-border, #e2e4e9);
+    --text: var(--color-text, #1c1e24);
+    --text-muted: var(--color-text-muted, #6b7280);
+    --accent: var(--color-accent, #4a7dff);
+    --accent-weak: color-mix(in srgb, var(--accent) 14%, transparent);
+    --danger: #e5484d;
+    --ok: #30a46c;
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 4px 16px rgba(16, 24, 40, .08);
+    --font: var(--font-sans, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; line-height: 1.45; }
+  button { font-family: inherit; }
+
+  /* ---------- layout ---------- */
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+
+  /* ---------- header ---------- */
+  .header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+  .header .logo { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(135deg, var(--accent), #7c5cff); display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 15px; flex: none; }
+  .header h1 { margin: 0; font-size: 16px; font-weight: 650; }
+  .header .sub { font-size: 12px; color: var(--text-muted); }
+
+  /* ---------- search ---------- */
+  .searchRow { display: flex; gap: 8px; padding: 0 16px 14px; flex-wrap: wrap; }
+  .input { flex: 1; min-width: 180px; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: var(--text); font-size: 14px; outline: none; transition: border-color .15s, box-shadow .15s; }
+  .input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 16px; border: none; border-radius: var(--radius-sm); background: var(--accent); color: #fff; font-size: 14px; font-weight: 550; cursor: pointer; transition: filter .15s, transform .05s; white-space: nowrap; }
+  .btn:hover { filter: brightness(1.06); }
+  .btn:active { transform: translateY(1px); }
+  .btn:disabled { opacity: .5; cursor: default; filter: none; transform: none; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1px solid var(--border); }
+  .btn.ghost:hover { background: var(--surface-2); filter: none; }
+  .btn.small { padding: 5px 10px; font-size: 12px; }
+
+  /* ---------- chips ---------- */
+  .chipRow { display: flex; align-items: center; gap: 6px; padding: 0 16px 12px; flex-wrap: wrap; }
+  .chipRow .label { font-size: 12px; color: var(--text-muted); flex: none; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); color: var(--text); font-size: 12.5px; cursor: pointer; transition: border-color .15s, background .15s; max-width: 240px; }
+  .chip:hover { border-color: var(--accent); }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .chip .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ---------- grids ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; padding: 16px; }
+  .tile { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; cursor: pointer; background: var(--surface); transition: transform .12s, box-shadow .12s, border-color .12s; display: flex; flex-direction: column; }
+  .tile:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-color: var(--accent); }
+  .tile .thumb { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; display: block; background: var(--surface-2); }
+  .tile .body { padding: 8px 10px; display: flex; flex-direction: column; gap: 3px; flex: 1; }
+  .tile .name { font-weight: 600; font-size: 13px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tile .meta { font-size: 11.5px; color: var(--text-muted); }
+
+  /* ---------- viewer ---------- */
+  .viewer { display: none; flex-direction: column; }
+  .viewer.show { display: flex; }
+  .viewerHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .viewerHead .title { font-weight: 600; font-size: 14px; }
+  .viewerHead .meta { font-size: 12px; color: var(--text-muted); }
+  .viewerBody { position: relative; height: 420px; background: radial-gradient(circle at 50% 40%, var(--surface-2) 0%, transparent 70%); }
+  .viewerBody canvas { width: 100%; height: 100%; display: block; }
+  .viewerHint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(0,0,0,.55); color: #fff; font-size: 12px; padding: 5px 12px; border-radius: 999px; pointer-events: none; white-space: nowrap; }
+
+  /* ---------- status / toast ---------- */
+  .status { display: flex; align-items: center; gap: 8px; padding: 0 16px 14px; font-size: 13px; color: var(--text-muted); min-height: 20px; }
+  .status.err { color: var(--danger); }
+  .spinner { width: 15px; height: 15px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { padding: 28px 16px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+  /* ---------- pager ---------- */
+  .pager { display: none; align-items: center; justify-content: center; gap: 10px; padding: 0 16px 16px; }
+  .pager.show { display: flex; }
+  .pager .info { font-size: 12.5px; color: var(--text-muted); }
+
+  /* ---------- section label ---------- */
+  .sectionLabel { padding: 4px 16px 0; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); font-weight: 600; }
+
+  /* ---------- toast ---------- */
+  #toast { position: fixed; right: 16px; bottom: 16px; z-index: 50; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+  .toast { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 10px 14px; font-size: 13px; max-width: 320px; animation: toastIn .2s ease; }
+  .toast.ok { border-left: 3px solid var(--ok); }
+  .toast.err { border-left: 3px solid var(--danger); }
+  @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- Поиск приложения -->
+  <div class="card">
+    <div class="header">
+      <div class="logo">V</div>
+      <div>
+        <h1>VRM Workshop</h1>
+        <div class="sub">Модели из мастерской Steam без владения игрой</div>
+      </div>
+    </div>
+    <div class="searchRow">
+      <input id="appQuery" class="input" placeholder="Название приложения — например, Zenless Zone Zero или Desktop Mate" autocomplete="off">
+      <button id="searchBtn" class="btn">Найти</button>
+    </div>
+
+    <!-- Просмотр -->
+    <div id="viewer" class="card viewer">
+      <div class="viewerHead">
+        <div>
+          <div id="infoTitle" class="title"></div>
+          <div id="infoMeta" class="meta"></div>
+        </div>
+        <div style="display:flex; gap:8px">
+          <button id="dlBtn" class="btn" disabled>Скачать в Загрузки</button>
+        </div>
+      </div>
+      <div class="viewerBody">
+        <canvas id="cv"></canvas>
+        <div class="viewerHint">Крути мышью, чтобы осмотреть</div>
+      </div>
+    </div>
+
+    <div class="searchRow" style="padding-top:0">
+      <input id="url" class="input" placeholder="…или вставь ссылку на работу мастерской / ID" autocomplete="off">
+      <button id="previewBtn" class="btn ghost">Предпросмотр</button>
+    </div>
+    <div id="histBar" class="chipRow" style="display:none">
+      <span class="label">Недавние:</span>
+      <span id="histChips" style="display:contents"></span>
+      <button id="clearHistBtn" class="btn ghost small">Очистить</button>
+    </div>
+  </div>
+
+  <!-- Приложения -->
+  <div id="appSection" style="display:none">
+    <div class="sectionLabel">Приложения</div>
+    <div id="appResults" class="grid"></div>
+  </div>
+
+  <!-- Каталог работ -->
+  <div id="catSection" style="display:none">
+    <div class="sectionLabel">Работы мастерской</div>
+    <div id="itemResults" class="grid"></div>
+    <div id="pager" class="pager">
+      <button id="prevBtn" class="btn ghost small">← Назад</button>
+      <span id="pageInfo" class="info"></span>
+      <button id="nextBtn" class="btn ghost small">Вперёд →</button>
+    </div>
+  </div>
+
+  <!-- Скины -->
+  <div id="skinBar" class="chipRow" style="display:none">
+    <span class="label">Скины:</span>
+    <span id="skinChips" style="display:contents"></span>
+  </div>
+
+  <!-- Статус -->
+  <div id="status" class="status"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let scene, camera, renderer, controls, model;
+const cv = document.getElementById('cv');
+const statusEl = document.getElementById('status');
+const dlBtn = document.getElementById('dlBtn');
+const viewer = document.getElementById('viewer');
+let currentUrl = '';
+let currentApp = 0, currentPage = 1, currentQuery = '';
+let currentTitle = '';
+
+/* ---------- helpers ---------- */
+function setStatus(msg, isErr) {
+  statusEl.innerHTML = '';
+  if (msg) {
+    if (isErr) statusEl.className = 'status err';
+    else statusEl.className = 'status';
+    statusEl.textContent = msg;
+  }
+}
+function busy(msg) {
+  statusEl.className = 'status';
+  statusEl.innerHTML = '<span class="spinner"></span><span></span>';
+  statusEl.querySelector('span:last-child').textContent = msg;
+}
+function toast(msg, kind) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (kind || '');
+  t.textContent = msg;
+  document.getElementById('toast').appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3500);
+}
+function fmtSize(b) { return b ? (b / 1048576).toFixed(1) + ' МБ' : ''; }
+
+/* ---------- 3D ---------- */
+function init() {
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.set(0, 1.2, 2.2);
+  renderer = new THREE.WebGLRenderer({ canvas: cv, alpha: true, antialias: true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const key = new THREE.DirectionalLight(0xffffff, 1.1); key.position.set(2, 3, 2); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.4); fill.position.set(-2, 1, -2); scene.add(fill);
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 1, 0);
+  animate();
+}
+function resizeViewer() {
+  const w = viewer.clientWidth || 800, h = viewer.clientHeight - 0;
+  const body = viewer.querySelector('.viewerBody');
+  const bw = body.clientWidth || 800, bh = body.clientHeight || 420;
+  renderer.setSize(bw, bh);
+  camera.aspect = bw / bh;
+  camera.updateProjectionMatrix();
+}
+function animate() { requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+function clearModel() {
+  if (model) { scene.remove(model); model.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); model = null; }
+}
+
+/* ---------- поиск приложения ---------- */
+async function searchApps() {
+  const q = document.getElementById('appQuery').value.trim();
+  if (!q) return;
+  busy('Ищу приложения…');
+  document.getElementById('appResults').innerHTML = '';
+  try {
+    const r = await window.astra.callBackend('search-app', { query: q });
+    const box = document.getElementById('appResults');
+    document.getElementById('appSection').style.display = 'block';
+    if (!r.items.length) {
+      box.innerHTML = '<div class="empty">Ничего не нашла по этому названию</div>';
+      setStatus('');
+      return;
+    }
+    r.items.forEach(it => {
+      const d = document.createElement('div'); d.className = 'tile';
+      d.innerHTML = '<img class="thumb" src="' + (it.image || '') + '" alt=""><div class="body"><div class="name"></div><div class="meta">appid ' + it.appid + '</div></div>';
+      d.querySelector('.name').textContent = it.name;
+      d.onclick = () => loadCatalog(it.appid);
+      box.appendChild(d);
+    });
+    setStatus('');
+    loadHistory();
+  } catch (e) { setStatus('Ошибка: ' + (e.message || e), true); }
+}
+
+/* ---------- каталог ---------- */
+async function loadCatalog(appid, page) {
+  currentApp = appid; currentPage = page || 1; currentQuery = '';
+  document.getElementById('appSection').style.display = 'none';
+  document.getElementById('catSection').style.display = 'block';
+  busy('Загружаю каталог…');
+  document.getElementById('itemResults').innerHTML = '';
+  try {
+    const r = await window.astra.callBackend('catalog', { appid: currentApp, page: currentPage });
+    renderItems(r);
+  } catch (e) { setStatus('Ошибка: ' + (e.message || e), true); }
+}
+
+function renderItems(r) {
+  const box = document.getElementById('itemResults');
+  box.innerHTML = '';
+  if (!r.items.length) {
+    box.innerHTML = '<div class="empty">В каталоге пусто</div>';
+  }
+  r.items.forEach(it => {
+    const d = document.createElement('div'); d.className = 'tile';
+    d.innerHTML = '<img class="thumb" src="' + (it.preview || '') + '" alt=""><div class="body"><div class="name"></div><div class="meta">' + fmtSize(it.file_size) + '</div></div>';
+    d.querySelector('.name').textContent = it.title || ('ID ' + it.id);
+    d.onclick = () => selectItem(it);
+    box.appendChild(d);
+  });
+  document.getElementById('pageInfo').textContent = 'Страница ' + r.page + (r.total ? ' · всего ' + r.total : '');
+  document.getElementById('pager').classList.toggle('show', true);
+  document.getElementById('prevBtn').disabled = r.page <= 1;
+  document.getElementById('nextBtn').disabled = !r.items.length;
+  setStatus('');
+}
+
+document.getElementById('prevBtn').onclick = () => loadCatalog(currentApp, currentPage - 1);
+document.getElementById('nextBtn').onclick = () => loadCatalog(currentApp, currentPage + 1);
+
+/* ---------- скины ---------- */
+async function selectItem(it) {
+  document.getElementById('url').value = it.id;
+  currentTitle = it.title || '';
+  await loadSkins(it.id, currentTitle);
+  await preview();
+}
+
+async function loadSkins(id, title) {
+  const bar = document.getElementById('skinBar');
+  const chips = document.getElementById('skinChips');
+  chips.innerHTML = '';
+  bar.style.display = 'none';
+  if (!currentApp || !title) return;
+  try {
+    const r = await window.astra.callBackend('skins', { appid: currentApp, title: title });
+    if (!r || !r.length) return;
+    const skins = r.filter(x => String(x.id) !== String(id));
+    if (!skins.length) return;
+    skins.forEach(s => {
+      const c = document.createElement('span'); c.className = 'chip';
+      c.innerHTML = '<span class="txt"></span>';
+      c.querySelector('.txt').textContent = shortTitle(s.title);
+      c.title = s.title;
+      c.onclick = () => { document.getElementById('url').value = s.id; preview(); markActive(c); };
+      chips.appendChild(c);
+    });
+    bar.style.display = 'flex';
+  } catch (e) { /* скины не критичны */ }
+}
+
+function shortTitle(t) {
+  let s = t.replace(/^[^A-Za-zА-Яа-яЁё0-9]+/, '');
+  s = s.replace(/\s*skin/i, '').trim();
+  if (s.length > 28) s = s.slice(0, 27) + '…';
+  return s;
+}
+function markActive(el) {
+  document.querySelectorAll('#skinChips .chip').forEach(c => c.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+
+/* ---------- предпросмотр ---------- */
+async function previewById(id) {
+  document.getElementById('url').value = id;
+  await preview();
+}
+
+async function preview() {
+  const url = document.getElementById('url').value.trim();
+  if (!url) { setStatus('Введи ссылку или ID работы', true); return; }
+  busy('Скачиваю модель из мастерской…');
+  try {
+    const info = await window.astra.callBackend('preview', { url });
+    currentUrl = url;
+    dlBtn.disabled = false;
+    document.getElementById('infoTitle').textContent = info.title;
+    document.getElementById('infoMeta').textContent = info.file_size ? fmtSize(info.file_size) : '';
+    const resp = await fetch(info.vrm_url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const buf = await resp.arrayBuffer();
+    viewer.classList.add('show');
+    resizeViewer();
+    clearModel();
+    busy('Разбираю модель…');
+    const loader = new THREE.GLTFLoader();
+    loader.parse(buf, '', gltf => {
+      model = gltf.scene; scene.add(model);
+      const box = new THREE.Box3().setFromObject(model);
+      const c = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3()).length() || 1;
+      model.position.sub(c);
+      camera.position.set(0, size * 0.6, size * 1.4);
+      controls.target.set(0, size * 0.4, 0); controls.update();
+      setStatus('Готово — крути мышью, чтобы осмотреть');
+    }, err => { setStatus('Ошибка загрузки модели: ' + err, true); });
+  } catch (e) { setStatus('Ошибка: ' + (e.message || e), true); }
+}
+
+/* ---------- скачивание ---------- */
+dlBtn.onclick = async () => {
+  dlBtn.disabled = true; busy('Сохраняю в Загрузки…');
+  try {
+    const r = await window.astra.callBackend('download', { url: currentUrl });
+    setStatus('');
+    toast('Сохранила: ' + r.path, 'ok');
+  } catch (e) { setStatus('Ошибка: ' + (e.message || e), true); }
+  finally { dlBtn.disabled = false; }
+};
+
+/* ---------- история ---------- */
+async function loadHistory() {
+  try {
+    const r = await window.astra.callBackend('history');
+    const bar = document.getElementById('histBar');
+    const chips = document.getElementById('histChips');
+    chips.innerHTML = '';
+    if (!r.length) { bar.style.display = 'none'; return; }
+    r.forEach(h => {
+      const c = document.createElement('span'); c.className = 'chip';
+      c.innerHTML = '<span class="txt"></span>';
+      c.querySelector('.txt').textContent = h.name;
+      c.title = 'Открыть каталог';
+      c.onclick = () => loadCatalog(h.appid);
+      chips.appendChild(c);
+    });
+    bar.style.display = 'flex';
+  } catch (e) { /* история не критична */ }
+}
+document.getElementById('clearHistBtn').onclick = async () => {
+  await window.astra.callBackend('clear-history');
+  loadHistory();
+};
+
+/* ---------- init ---------- */
+document.getElementById('searchBtn').onclick = searchApps;
+document.getElementById('appQuery').addEventListener('keydown', e => { if (e.key === 'Enter') searchApps(); });
+document.getElementById('previewBtn').onclick = preview;
+document.getElementById('url').addEventListener('keydown', e => { if (e.key === 'Enter') preview(); });
+window.addEventListener('resize', resizeViewer);
+loadHistory();
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Astra
+.astra-venv.json
+
+# VRM Workshop runtime
+cache/
+ui/cache/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+test_gltf.js
+history.json
