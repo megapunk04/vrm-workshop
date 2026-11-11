@@ -2,7 +2,7 @@
 id = "vrm-workshop"
 name = "VRM Workshop"
 version = "1.0.0"
-description = "Скачивает VRM-модели из мастерской Steam через DepotDownloaderMod и показывает 3D-превью до сохранения."
+description = "Downloads VRM models from the Steam Workshop via DepotDownloaderMod and shows a 3D preview before saving."
 author = "megapunk04"
 license = "MIT"
 call_timeout_secs = 600
