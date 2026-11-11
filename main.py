@@ -83,27 +83,29 @@ def search_app(query: str) -> list[dict]:
 
 
 def _extract_workshop_items(html: str) -> dict | None:
-    """Вытаскивает список работ из нового JSON-блока страницы мастерской (React SSR).
-    Возвращает {"items": [...], "total": int} или None, если формат не найден."""
+    """Вытаскивает список работ из нового JSON-блока страницы мастерской (React SSR)
+    и дополняет из HTML-ссылок, если элементов меньше 30."""
     m = re.search(r'<script[^>]*id="valve-ssr-data"[^>]*>(.*?)</script>', html, re.S)
     if not m:
         return None
-    found = {}
+    items_map = {}
+    total = 0
 
     def walk(o):
+        nonlocal total
         if isinstance(o, dict):
             if isinstance(o.get("results"), list) and o["results"] and isinstance(o["results"][0], dict) and "publishedfileid" in o["results"][0]:
-                items = []
                 for r in o["results"]:
-                    items.append({
-                        "id": str(r.get("publishedfileid", "")),
-                        "title": r.get("title", ""),
-                        "preview": r.get("preview_url", ""),
-                        "file_size": int(r.get("file_size", 0) or 0),
-                    })
-                found["items"] = items
-                found["total"] = int(o.get("total_count", 0) or len(items))
-                return
+                    pid = str(r.get("publishedfileid", ""))
+                    if pid and pid not in items_map:
+                        items_map[pid] = {
+                            "id": pid,
+                            "title": r.get("title", ""),
+                            "preview": r.get("preview_url", ""),
+                            "file_size": int(r.get("file_size", 0) or 0),
+                        }
+                if o.get("total_count"):
+                    total = int(o.get("total_count"))
             for v in o.values():
                 walk(v)
         elif isinstance(o, list):
@@ -117,10 +119,33 @@ def _extract_workshop_items(html: str) -> dict | None:
 
     try:
         data = json.loads(m.group(1))
+        walk(data)
     except Exception:
+        pass
+
+    # Если элементов меньше 30, добираем ID из HTML-ссылок
+    if len(items_map) < 30:
+        for m_id in re.finditer(r'sharedfiles/filedetails/\?id=(\d+)', html):
+            pid = m_id.group(1)
+            if pid not in items_map:
+                items_map[pid] = {"id": pid, "title": "", "preview": "", "file_size": 0}
+
+    items = list(items_map.values())
+    if not items:
         return None
-    walk(data)
-    return found or None
+
+    # Если у каких-то элементов нет заголовков (добраны по ссылкам), подтянем их детали пачкой
+    missing_details = [int(x["id"]) for x in items if not x["title"]]
+    if missing_details:
+        details = fetch_details_bulk(missing_details)
+        for it in items:
+            if not it["title"] and int(it["id"]) in missing_details:
+                d = details.get(it["id"], {})
+                it["title"] = d.get("title", "")
+                it["preview"] = d.get("preview_url", "")
+                it["file_size"] = int(d.get("file_size", 0))
+
+    return {"items": items, "total": total or len(items)}
 
 
 def browse_catalog(appid: int, page: int = 1, numperpage: int = 30, query: str = "") -> dict:
