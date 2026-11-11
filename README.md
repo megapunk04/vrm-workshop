@@ -3,7 +3,7 @@
 Плагин для **Astra** — скачивает VRM-модели из мастерской Steam (без владения игрой) и показывает 3D-превью до сохранения.
 
 ![Astra](https://img.shields.io/badge/Astra-0.2.7-blue)
-![Version](https://img.shields.io/badge/version-1.0.0-brightgreen)
+![Version](https://img.shields.io/badge/version-1.0.1-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---

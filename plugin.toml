@@ -1,7 +1,7 @@
 [plugin]
 id = "vrm-workshop"
 name = "VRM Workshop"
-version = "1.0.0"
+version = "1.0.1"
 description = "Downloads VRM models from the Steam Workshop via DepotDownloaderMod and shows a 3D preview before saving."
 author = "megapunk04"
 license = "MIT"

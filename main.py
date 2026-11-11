@@ -82,11 +82,57 @@ def search_app(query: str) -> list[dict]:
     return out
 
 
+def _extract_workshop_items(html: str) -> dict | None:
+    """Вытаскивает список работ из нового JSON-блока страницы мастерской (React SSR).
+    Возвращает {"items": [...], "total": int} или None, если формат не найден."""
+    m = re.search(r'<script[^>]*id="valve-ssr-data"[^>]*>(.*?)</script>', html, re.S)
+    if not m:
+        return None
+    found = {}
+
+    def walk(o):
+        if isinstance(o, dict):
+            if isinstance(o.get("results"), list) and o["results"] and isinstance(o["results"][0], dict) and "publishedfileid" in o["results"][0]:
+                items = []
+                for r in o["results"]:
+                    items.append({
+                        "id": str(r.get("publishedfileid", "")),
+                        "title": r.get("title", ""),
+                        "preview": r.get("preview_url", ""),
+                        "file_size": int(r.get("file_size", 0) or 0),
+                    })
+                found["items"] = items
+                found["total"] = int(o.get("total_count", 0) or len(items))
+                return
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+        elif isinstance(o, str) and o[:1] in "{[":
+            try:
+                walk(json.loads(o))
+            except Exception:
+                pass
+
+    try:
+        data = json.loads(m.group(1))
+    except Exception:
+        return None
+    walk(data)
+    return found or None
+
+
 def browse_catalog(appid: int, page: int = 1, numperpage: int = 30, query: str = "") -> dict:
     url = f"https://steamcommunity.com/workshop/browse/?appid={appid}&section=readytouseitems&numperpage={numperpage}&p={page}"
     if query:
         url += "&searchtext=" + urllib.parse.quote(query)
     t = _http_get(url)
+    # Новый формат (React SSR): данные во встроенном JSON
+    parsed = _extract_workshop_items(t)
+    if parsed:
+        return {"items": parsed["items"], "total": parsed["total"], "page": page}
+    # Старый формат: ссылки filedetails/?id= в HTML
     ids = []
     for m in re.finditer(r'sharedfiles/filedetails/\?id=(\d+)', t):
         if m.group(1) not in ids:
@@ -141,6 +187,11 @@ def search_skins(appid: int, title: str) -> list[dict]:
         return []
     url = f"https://steamcommunity.com/workshop/browse/?appid={appid}&section=readytouseitems&numperpage=30&p=1&searchtext=" + urllib.parse.quote(key)
     t = _http_get(url)
+    # Новый формат (React SSR): данные во встроенном JSON
+    parsed = _extract_workshop_items(t)
+    if parsed:
+        return parsed["items"]
+    # Старый формат: ссылки filedetails/?id= в HTML
     ids = []
     for m in re.finditer(r'sharedfiles/filedetails/\?id=(\d+)', t):
         if m.group(1) not in ids:
